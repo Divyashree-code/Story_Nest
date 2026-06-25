@@ -180,10 +180,10 @@ def _score_story(state: dict) -> tuple[dict, int]:
 
 # ── Spec file writer ──────────────────────────────────────────────────────────
 
-def _write_story_spec(state: dict, scores: dict) -> None:
+def _write_story_spec(state: dict, scores: dict, passed: bool) -> None:
     """
-    Writes specs/{session_id}/story_final.md on approval.
-    Called only when validation_passed = True.
+    Writes specs/{session_id}/story_final.md.
+    Always written — on pass with approval status, on fail with unvalidated status.
     Wrapped in safe_run — spec failure never crashes session.
     """
     session_id = state["session_id"]
@@ -194,13 +194,19 @@ def _write_story_spec(state: dict, scores: dict) -> None:
         if k != "rewrite_instructions" and isinstance(v, int)
     )
 
+    status = (
+        f"**Status:** ✅ Approved on attempt {state.get('rewrite_attempts', 1)}"
+        if passed else
+        f"**Status:** ⚠️ Used as-is after max rewrites (validation did not pass)"
+    )
+
     content = (
         f"# Story Final\n\n"
         f"**Session:** {session_id}\n"
         f"**Child:** {state.get('child_name')}, age {state.get('child_age')}\n"
         f"**Topic:** {state.get('topic')}\n"
         f"**Moral:** {state.get('moral_lesson')}\n"
-        f"**Approved on attempt:** {state.get('rewrite_attempts', 1)}\n\n"
+        f"{status}\n\n"
         f"## Validation Scores\n\n{scores_md}\n\n"
         f"## Approved Story\n\n{state.get('story_text', '')}\n"
     )
@@ -278,13 +284,15 @@ def validator_node(state: dict) -> dict:
         total_tokens=total_tokens,
     )
 
-    # Write spec file on approval
-    if passed:
-        _write_story_spec(state, scores)
+    # Write spec file on approval, or when max rewrites reached (demo: UI must show story)
+    max_rewrites = state.get("rewrite_attempts", 0) >= _settings.get("MAX_REWRITE_ATTEMPTS", 2)
+    if passed or max_rewrites:
+        _write_story_spec(state, scores, passed)
         log.info(
-            "story_approved_spec_written",
+            "story_spec_written",
             session_id=session_id,
             attempt=attempt,
+            passed=passed,
             total_score=total_score,
         )
 

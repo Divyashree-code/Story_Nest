@@ -496,6 +496,56 @@ def get_recent_sessions(limit: int = 5) -> list:
     return results
 
 
+def get_session(session_id: str) -> Optional[dict]:
+    """
+    Returns a single session with LLM scores and trajectory joined.
+    Used by Tab 2 in app.py to display results after resume completes.
+    Returns None if session not found.
+    """
+    with _get_conn() as conn:
+        session = conn.execute(
+            "SELECT * FROM sessions WHERE session_id = ?", (session_id,)
+        ).fetchone()
+
+        if session is None:
+            return None
+
+        score_row = conn.execute(
+            "SELECT * FROM llm_scores WHERE session_id = ?", (session_id,)
+        ).fetchone()
+
+        traj_row = conn.execute(
+            "SELECT * FROM trajectory_scores WHERE session_id = ? ORDER BY evaluated_at DESC LIMIT 1",
+            (session_id,)
+        ).fetchone()
+
+    return {
+        "session_id":          session_id,
+        "topic":               session["topic"],
+        "moral_lesson":        session["moral_lesson"],
+        "story_length":        session["story_length"],
+        "answer_result":       session["answer_result"],
+        "hint_count":          session["hint_count"],
+        "pronunciation_score": session["pronunciation_score"],
+        "total_tokens":        session["total_tokens"],
+        "rewrite_attempts":    session["rewrite_attempts"],
+        "narration_failed":    bool(session["narration_failed"]),
+        "llm_scores": {
+            "vocabulary_fit": score_row["vocabulary_fit"] if score_row else None,
+            "moral_clarity":  score_row["moral_clarity"]  if score_row else None,
+            "scare_factor":   score_row["scare_factor"]   if score_row else None,
+            "engagement":     score_row["engagement"]      if score_row else None,
+            "length_fit":     score_row["length_fit"]      if score_row else None,
+            "passed":         bool(score_row["passed"])    if score_row else None,
+        } if score_row else None,
+        "trajectory": {
+            "score":          traj_row["trajectory_score"]  if traj_row else None,
+            "weakest_step":   traj_row["weakest_step"]      if traj_row else None,
+            "recommendation": traj_row["recommendation"]    if traj_row else None,
+        } if traj_row else None,
+    }
+
+
 def get_lessons_covered() -> list:
     """
     Returns list of moral lessons taught across all sessions.

@@ -21,7 +21,7 @@ from io import BytesIO
 import streamlit as st
 
 from src.memory.sqlite import (
-    save_profile, get_profile, profile_exists, get_recent_sessions,
+    save_profile, get_profile, profile_exists, get_recent_sessions, get_session,
 )
 from src.tools.sandbox_manager import prewarm as _sandbox_prewarm, cleanup as _sandbox_cleanup
 
@@ -98,17 +98,16 @@ st.markdown("""
 
 # ── Session state defaults ────────────────────────────────────────────────────
 _defaults = {
-    "page":               "register",   # register | start | session
-    "story_text":         "",
-    "session_running":    False,
-    "session_result":     None,
-    "session_id":         None,
-    "awaiting_discussion": False,
-    "resume_running":     False,
-    "resume_result":      None,
-    # One-shot flags: guarantee a rerun immediately after background threads finish
-    "_session_just_finished": False,
-    "_resume_just_finished":  False,
+    "page":                   "register",  # register | start | session
+    "session_id":             None,
+    "session_topic":          "",
+    "session_running":        False,
+    "session_complete":       False,       # set when run_story_session result arrives
+    "resume_running":         False,
+    "resume_complete":        False,       # set when resume_story_session result arrives
+    "awaiting_discussion":    False,
+    "discussion_prompt_text": "",
+    "narration_failed":       False,
 }
 for k, v in _defaults.items():
     if k not in st.session_state:
@@ -234,9 +233,6 @@ def _run_session(profile, topic, story_length, session_id):
         _STORE["results"][session_id] = result
     except Exception as e:
         _STORE["results"][session_id] = {"error": str(e)}
-    finally:
-        st.session_state.session_running        = False
-        st.session_state._session_just_finished = True
 
 
 def _run_resume(session_id):
@@ -364,6 +360,7 @@ def show_session_start():
         st.session_state.resume_result        = None
         st.session_state.awaiting_discussion  = False
         st.session_state.session_id           = session_id
+        st.session_state.session_topic        = topic.strip()
         st.session_state.page                 = "session"
 
         t = threading.Thread(
@@ -382,27 +379,52 @@ def show_session_start():
 def show_session():
     profile = get_profile() or {}
 
-    # ── Pick up background thread results (thread-safe via module-level dicts) ──
-    # All session_state flag updates (running=False) happen HERE in the main
-    # thread, not in the background thread, to avoid Streamlit thread-safety issues.
+    # ── Pick up background thread results — main thread only ─────────────────
+    # All session_state writes happen here, never in the background thread.
+    # Background thread only writes to _STORE (module-level dict, GIL-safe).
     _sid_now = st.session_state.get("session_id", "")
     if _sid_now and _sid_now in _STORE["results"]:
         _r = _STORE["results"].pop(_sid_now)
-        st.session_state.session_result      = _r
-        st.session_state.session_running     = False   # set by main thread
-        st.session_state.story_text          = _r.get("story_text", "")
-        st.session_state.awaiting_discussion = _r.get("awaiting_discussion", False)
+        st.session_state.session_running        = False
+        st.session_state.session_complete       = True
+        st.session_state.awaiting_discussion    = _r.get("awaiting_discussion", False)
+        st.session_state.discussion_prompt_text = _r.get("discussion_prompt_text", "")
+        st.session_state.narration_failed       = _r.get("narration_failed", False)
+        if _r.get("topic"):
+            st.session_state.session_topic      = _r["topic"]
     if _sid_now and _sid_now in _STORE["resumes"]:
-        _rr = _STORE["resumes"].pop(_sid_now)
-        st.session_state.resume_result       = _rr
-        st.session_state.resume_running      = False   # set by main thread
-        st.session_state.awaiting_discussion = False
+        _STORE["resumes"].pop(_sid_now)
+        st.session_state.resume_running         = False
+        st.session_state.resume_complete        = True
+        st.session_state.awaiting_discussion    = False
 
-    result  = st.session_state.session_result or {}
-    resume  = st.session_state.resume_result  or {}
+    # ── Compute values used across tabs ──────────────────────────────────────
+    _sid = st.session_state.get("session_id", "")
 
-    # Combine results — resume result takes priority after Ready is tapped
-    final_result = {**result, **resume} if resume else result
+    # Story text — read from disk only, never from session state
+    _live_text = ""
+    if _sid:
+        from pathlib import Path as _Path
+        _spec = _Path(f"./specs/{_sid}/story_final.md")
+        if _spec.exists():
+            _raw = _spec.read_text(encoding="utf-8")
+            if "## Approved Story" in _raw:
+                _live_text = _raw.split("## Approved Story", 1)[-1].strip()
+            else:
+                _live_text = _raw.strip()
+
+    _still_running = (
+        st.session_state.session_running
+        and not st.session_state.session_complete
+        and _sid not in _STORE["results"]
+    )
+    _resume_still_running = (
+        st.session_state.resume_running
+        and not st.session_state.resume_complete
+        and _sid not in _STORE["resumes"]
+    )
+
+    _topic = st.session_state.get("session_topic", "")
 
     tab1, tab2, tab3 = st.tabs(["📖 Story", "📊 Session Results", "📜 History"])
 
@@ -410,38 +432,13 @@ def show_session():
     with tab1:
         st.markdown("#### Story")
 
-        # Story text: read specs/{session_id}/story_final.md — written by the
-        # validator on approval, before the narrator runs. Available during
-        # narration so the child can read along while listening.
-        _live_text = ""
-        _sid = st.session_state.get("session_id", "")
-        if _sid:
-            from pathlib import Path as _Path
-            _spec = _Path(f"./specs/{_sid}/story_final.md")
-            if _spec.exists():
-                _raw = _spec.read_text(encoding="utf-8")
-                # story_final.md has story under "## Approved Story" heading
-                if "## Approved Story" in _raw:
-                    _live_text = _raw.split("## Approved Story", 1)[-1].strip()
-                else:
-                    _live_text = _raw.strip()
-        story_display = (
-            _live_text
-            or st.session_state.story_text
-            or final_result.get("story_text", "")
-        )
-
-        # DEBUG — remove once story display is confirmed working
-        st.caption(
-            f"DEBUG | running={st.session_state.session_running} | "
-            f"sid={_sid} | spec_chars={len(_live_text)} | "
-            f"awaiting={st.session_state.awaiting_discussion}"
-        )
+        if _topic:
+            st.caption(f"📖 Topic: **{_topic.title()}**")
 
         import html as _html
         story_html = (
-            _html.escape(story_display).replace("\n", "<br>")
-            if story_display
+            _html.escape(_live_text).replace("\n", "<br>")
+            if _live_text
             else "<span style='color:#bbb'>Your story will appear here…</span>"
         )
         st.markdown(
@@ -449,36 +446,23 @@ def show_session():
             unsafe_allow_html=True,
         )
 
-        # Narration failed message
-        if final_result.get("narration_failed"):
+        if st.session_state.narration_failed:
             st.warning(
                 "Audio narration failed. The story is shown above — "
                 "you can read it aloud to your child."
             )
 
-        # Spinner while generating / narrating.
-        # Poll while session_running=True AND no result has arrived yet.
-        # _STORE["results"] is backed by @st.cache_resource and survives reruns,
-        # so it is the reliable signal — unlike session_running which is written
-        # by the background thread and may not be visible immediately.
-        _still_running = (
-            st.session_state.session_running
-            and st.session_state.session_result is None
-            and _sid not in _STORE["results"]
-        )
         if _still_running:
             if _live_text:
                 st.info("🔊 Narrating your story… please wait.")
             else:
                 st.info("✨ Creating your story… please wait.")
-            time.sleep(1)
-            st.rerun()
 
         # Discussion prompt — parent and child talk, then tap Ready
         if st.session_state.awaiting_discussion and not st.session_state.resume_running:
-            prompt_text = result.get(
-                "discussion_prompt_text",
-                f"Talk with your child about today's story. Take your time."
+            prompt_text = (
+                st.session_state.discussion_prompt_text
+                or "Talk with your child about today's story. Take your time."
             )
             st.info(f"💬 {prompt_text}")
 
@@ -497,23 +481,11 @@ def show_session():
                 t.start()
                 st.rerun()
 
-        # Spinner while puzzle/answer interaction running
-        _resume_still_running = (
-            st.session_state.resume_running
-            and st.session_state.resume_result is None
-            and _sid not in _STORE["resumes"]
-        )
         if _resume_still_running:
             st.info("🎯 Puzzle time… please wait.")
-            time.sleep(1)
-            st.rerun()
-        elif st.session_state.get("_resume_just_finished"):
-            st.session_state._resume_just_finished = False
-            time.sleep(0.3)
-            st.rerun()
 
         # Session complete — back to start button
-        if final_result and not st.session_state.session_running \
+        if st.session_state.resume_complete \
                 and not st.session_state.resume_running \
                 and not st.session_state.awaiting_discussion:
             st.divider()
@@ -525,86 +497,83 @@ def show_session():
 
     # ── TAB 2: SESSION RESULTS ────────────────────────────────────────────────
     with tab2:
-        if final_result.get("error") and not final_result.get("story_text"):
-            st.error(f"Session error: {final_result['error']}")
-        elif final_result.get("moral_lesson"):
-            st.markdown("#### Session Results")
+        if st.session_state.resume_complete and _sid:
+            # Read all result data from SQLite — no large dicts in session state
+            _sdata = get_session(_sid)
+            if _sdata:
+                st.markdown("#### Session Results")
 
-            # Key metrics
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Moral taught",    final_result.get("moral_lesson", "—").title())
-            c2.metric("Answer",          final_result.get("answer_result", "—").title())
-            c3.metric("Hints needed",    final_result.get("hint_count", 0))
-            c4.metric("Total tokens",    final_result.get("total_tokens", 0))
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Moral taught",  (_sdata.get("moral_lesson") or "—").title())
+                c2.metric("Answer",        (_sdata.get("answer_result") or "—").title())
+                c3.metric("Hints needed",  _sdata.get("hint_count", 0))
+                c4.metric("Total tokens",  _sdata.get("total_tokens", 0))
 
-            col1, col2 = st.columns(2)
-            with col1:
-                col1.metric("Rewrites",  final_result.get("rewrite_attempts", 0))
-            with col2:
-                pron = final_result.get("pronunciation_score")
-                col2.metric(
-                    "Pronunciation clarity",
-                    f"{pron:.2f}" if pron is not None else "N/A"
-                )
-
-            # LLM Judge scores
-            scores = final_result.get("validation_score", {})
-            if scores:
-                st.divider()
-                st.markdown("**Story quality scores (LLM Judge)**")
-                for k, v in scores.items():
-                    if isinstance(v, int):
-                        label  = k.replace("_", " ").title()
-                        colour = "normal" if v >= 4 else ("off" if v == 3 else "inverse")
-                        st.progress(v / 5, text=f"{label}: {v}/5")
-
-            # Trajectory scores (if available from resume result)
-            traj = final_result.get("_trajectory")
-            if traj:
-                st.divider()
-                st.markdown("**Agent behaviour score (Trajectory)**")
-                st.metric(
-                    "Overall trajectory score",
-                    f"{traj.get('trajectory_score', 0):.2f}/1.0"
-                )
-                if traj.get("weakest_step"):
-                    st.caption(
-                        f"⚠️ Weakest step: **{traj['weakest_step'].replace('_', ' ').title()}**"
+                col1, col2 = st.columns(2)
+                with col1:
+                    col1.metric("Rewrites", _sdata.get("rewrite_attempts", 0))
+                with col2:
+                    pron = _sdata.get("pronunciation_score")
+                    col2.metric(
+                        "Pronunciation clarity",
+                        f"{pron:.2f}" if pron is not None else "N/A"
                     )
-                if traj.get("recommendation"):
-                    st.caption(f"💡 {traj['recommendation']}")
 
-            # Export buttons
-            st.divider()
-            st.markdown("**Export**")
-            col1, col2 = st.columns(2)
+                # LLM Judge scores
+                scores = _sdata.get("llm_scores") or {}
+                if scores:
+                    st.divider()
+                    st.markdown("**Story quality scores (LLM Judge)**")
+                    for k, v in scores.items():
+                        if k != "passed" and isinstance(v, int):
+                            st.progress(v / 5, text=f"{k.replace('_', ' ').title()}: {v}/5")
 
-            with col1:
-                txt = (
-                    f"StoryNest — {profile.get('child_name', '')} — "
-                    f"{datetime.now().strftime('%d %b %Y')}\n\n"
-                    f"Topic: {final_result.get('topic', '')}\n"
-                    f"Moral: {final_result.get('moral_lesson', '')}\n\n"
-                    f"{final_result.get('story_text', '')}"
-                )
-                st.download_button(
-                    "📄 Download TXT",
-                    data=txt,
-                    file_name=f"story_{profile.get('child_name', 'session')}.txt",
-                    mime="text/plain",
-                    use_container_width=True,
-                )
+                # Trajectory
+                traj = _sdata.get("trajectory")
+                if traj and traj.get("score") is not None:
+                    st.divider()
+                    st.markdown("**Agent behaviour score (Trajectory)**")
+                    st.metric("Overall trajectory score", f"{traj['score']:.2f}/1.0")
+                    if traj.get("weakest_step"):
+                        st.caption(f"⚠️ Weakest step: **{traj['weakest_step'].replace('_', ' ').title()}**")
+                    if traj.get("recommendation"):
+                        st.caption(f"💡 {traj['recommendation']}")
 
-            with col2:
-                pdf_bytes = _make_pdf(final_result, profile)
-                if pdf_bytes:
+                # Export — story text read from disk
+                st.divider()
+                st.markdown("**Export**")
+                col1, col2 = st.columns(2)
+                _story_for_export = _live_text
+
+                with col1:
+                    txt = (
+                        f"StoryNest — {profile.get('child_name', '')} — "
+                        f"{datetime.now().strftime('%d %b %Y')}\n\n"
+                        f"Topic: {_sdata.get('topic', '')}\n"
+                        f"Moral: {_sdata.get('moral_lesson', '')}\n\n"
+                        f"{_story_for_export}"
+                    )
                     st.download_button(
-                        "📕 Download PDF",
-                        data=pdf_bytes,
-                        file_name=f"story_{profile.get('child_name', 'session')}.pdf",
-                        mime="application/pdf",
+                        "📄 Download TXT",
+                        data=txt,
+                        file_name=f"story_{profile.get('child_name', 'session')}.txt",
+                        mime="text/plain",
                         use_container_width=True,
                     )
+
+                with col2:
+                    _pdf_data = {**_sdata, "story_text": _story_for_export}
+                    pdf_bytes = _make_pdf(_pdf_data, profile)
+                    if pdf_bytes:
+                        st.download_button(
+                            "📕 Download PDF",
+                            data=pdf_bytes,
+                            file_name=f"story_{profile.get('child_name', 'session')}.pdf",
+                            mime="application/pdf",
+                            use_container_width=True,
+                        )
+        elif _still_running or st.session_state.session_complete:
+            st.caption("Results will appear here after the puzzle is complete.")
         else:
             st.caption("Session results will appear here after the story completes.")
 
@@ -661,6 +630,12 @@ def show_session():
                         )
                         if traj.get("recommendation"):
                             st.caption(f"💡 {traj['recommendation']}")
+
+    # ── Polling reruns — after ALL tabs rendered ───────────────────────────────
+    # All tabs render fully before any rerun is triggered.
+    if _still_running or _resume_still_running:
+        time.sleep(1)
+        st.rerun()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
