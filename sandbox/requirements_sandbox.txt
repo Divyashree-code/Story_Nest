@@ -3,6 +3,7 @@
 # Pinned to exact versions for reproducible Docker builds
 
 requests==2.32.3
+flask==3.0.3
 transformers==4.40.0
 torch==2.2.2
 torchaudio==2.2.2

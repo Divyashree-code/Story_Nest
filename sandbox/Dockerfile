@@ -50,5 +50,9 @@ USER sandbox
 # ── Block any accidental network calls from transformers at runtime ───────────
 ENV TRANSFORMERS_OFFLINE=1
 
-# ── Default command (overridden by caller) ────────────────────────────────────
-CMD ["python", "--help"]
+# ── Expose scorer Flask port ──────────────────────────────────────────────────
+EXPOSE 8080
+
+# ── Default command — scorer Flask server ─────────────────────────────────────
+# web_fetcher.py is invoked via exec_run with --topic argument
+CMD ["python", "scorer.py", "--server"]

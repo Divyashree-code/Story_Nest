@@ -48,8 +48,7 @@ GEMINI_MODEL   = _settings.get("GEMINI_MODEL", "gemini-2.5-flash")
 LENGTH_WORDS   = _settings.get("STORY_LENGTH_WORDS", {
     "Short": 150, "Medium": 350, "Long": 700
 })
-PASS_THRESHOLD       = 3   # must match validator.py
-PASS_THRESHOLD_SHORT = 2   # relaxed threshold for Short stories — must match validator.py
+PASS_THRESHOLD = 3   # must match validator.py — all scores must be >= this to pass
 
 # Writer uses temperature=0.8 — creativity needed for engaging stories
 gemini_writer = genai.GenerativeModel(
@@ -104,17 +103,12 @@ def _build_system_prompt(state: dict) -> str:
     rewrite_note = ""
     if state.get("rewrite_instructions", "").strip():
         # Build history of all prior failures so writer doesn't fix one and break another
-        threshold = (
-            PASS_THRESHOLD_SHORT
-            if state.get("story_length") == "Short"
-            else PASS_THRESHOLD
-        )
         history_lines = ""
         for entry in state.get("validation_history", []):
             failed = [
                 f"{k}={v}/5"
                 for k, v in entry.get("scores", {}).items()
-                if isinstance(v, int) and v < threshold
+                if isinstance(v, int) and v < PASS_THRESHOLD
             ]
             if failed:
                 history_lines += f"\n  Attempt {entry['attempt']}: failed on {', '.join(failed)}"

@@ -6,7 +6,7 @@
   "LOG_PATH":           "./logs/app.log",
   "AUDIO_DIR":          "./data",
   "SANDBOX_IMAGE":      "storynest-sandbox",
-  "SANDBOX_TIMEOUT_S":  30,
+  "SANDBOX_TIMEOUT_S":  60,
   "WHISPER_MODEL":      "base",
   "KOKORO_VOICE":       "af_heart",
   "KOKORO_SAMPLE_RATE": 24000,

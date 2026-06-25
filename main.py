@@ -29,6 +29,7 @@ import json
 import os
 import uuid
 import time
+import threading
 from pathlib import Path
 from typing import TypedDict, Optional, Callable, Literal
 
@@ -37,6 +38,7 @@ import sqlite3
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.errors import NodeInterrupt
 
+from src.tools.sandbox_manager import call_scorer
 from src.agents.architect import architect_node
 from src.agents.writer import writer_node
 from src.agents.validator import validator_node
@@ -118,32 +120,19 @@ class StoryState(TypedDict):
 # ── Docker scorer ─────────────────────────────────────────────────────────────
 
 def _call_scorer(audio_path: Path, session_id: str) -> Optional[float]:
-    """Runs pronunciation scorer in Docker. Returns score or None."""
-    try:
-        import docker
-        client = docker.from_env()
-        output = client.containers.run(
-            image=SANDBOX_IMAGE,
-            command=["python", "scorer.py", "--audio", "/audio/recording.wav"],
-            volumes={str(audio_path).replace("\\", "/"): {"bind": "/audio/recording.wav", "mode": "ro"}},
-            remove=True,
-            network_mode="none",
-            mem_limit="512m",
-            cpu_period=100000,
-            cpu_quota=50000,
-        )
-        result = json.loads(output.decode("utf-8").strip())
-        if result.get("success"):
-            score = float(result["score"])
-            log.info("pronunciation_scored", session_id=session_id, score=score)
-            return score
-        log.warning("pronunciation_scorer_returned_failure",
-                    session_id=session_id, error=result.get("error"))
-        return None
-    except Exception as exc:
-        log.warning("pronunciation_scorer_docker_failed",
-                    session_id=session_id, error=str(exc))
-        return None
+    """
+    Scores pronunciation via pre-warmed scorer container.
+    Sends POST /score with filename — audio read from /data mount inside container.
+    Returns score float or None on failure.
+    """
+    result = call_scorer(audio_path, session_id)
+    if result.get("success"):
+        score = float(result["score"])
+        log.info("pronunciation_scored", session_id=session_id, score=score)
+        return score
+    log.warning("pronunciation_scorer_returned_failure",
+                session_id=session_id, error=result.get("error"))
+    return None
 
 
 # ── Inline nodes ──────────────────────────────────────────────────────────────
@@ -276,6 +265,7 @@ def run_story_session(
 
     if on_story_chunk:
         _story_chunk_callbacks[session_id] = on_story_chunk
+
 
     story_graph = build_graph(checkpointer=_checkpointer)
     config      = {"configurable": {"thread_id": session_id}}

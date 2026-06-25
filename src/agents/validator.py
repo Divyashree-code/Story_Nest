@@ -54,7 +54,8 @@ GEMINI_MODEL  = _settings.get("GEMINI_MODEL", "gemini-2.5-flash")
 LENGTH_WORDS  = _settings.get("STORY_LENGTH_WORDS", {
     "Short": 150, "Medium": 350, "Long": 700
 })
-PASS_THRESHOLD = 3   # all scores must be >= this to pass
+PASS_THRESHOLD       = 3   # all scores must be >= this to pass (Medium/Long)
+PASS_THRESHOLD_SHORT = 2   # relaxed threshold for Short stories (150 words)
 
 # Validator uses temperature=0.0 — consistency over creativity
 gemini_validator = genai.GenerativeModel(
@@ -241,12 +242,17 @@ def validator_node(state: dict) -> dict:
 
     scores, tokens = _score_story(state)
 
-    # Determine pass/fail
+    # Determine pass/fail — Short stories use a relaxed threshold
     score_values = {
         k: v for k, v in scores.items()
         if k != "rewrite_instructions" and isinstance(v, int)
     }
-    passed = all(v >= PASS_THRESHOLD for v in score_values.values())
+    threshold = (
+        PASS_THRESHOLD_SHORT
+        if state.get("story_length") == "Short"
+        else PASS_THRESHOLD
+    )
+    passed = all(v >= threshold for v in score_values.values())
     total_score = sum(score_values.values())
 
     # Append to validation history for trajectory evaluator

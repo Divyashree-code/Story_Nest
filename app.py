@@ -12,6 +12,7 @@ Calls run_story_session() and resume_story_session() from main.py
 in background threads. Results stored in st.session_state.
 """
 
+import atexit
 import threading
 import time
 from datetime import datetime
@@ -22,6 +23,23 @@ import streamlit as st
 from src.memory.sqlite import (
     save_profile, get_profile, profile_exists, get_recent_sessions,
 )
+from src.tools.sandbox_manager import prewarm as _sandbox_prewarm, cleanup as _sandbox_cleanup
+
+
+@st.cache_resource
+def _init_sandbox():
+    """
+    Pre-warms scorer and web_fetch containers at app startup.
+    @st.cache_resource ensures this runs exactly once across all Streamlit reruns.
+    Runs in a daemon thread — Ctrl+C kills it cleanly.
+    atexit registered once here to clean up containers on app exit.
+    """
+    atexit.register(_sandbox_cleanup)
+    threading.Thread(target=_sandbox_prewarm, args=("startup",), daemon=True).start()
+    return True
+
+
+_init_sandbox()
 
 # ── Page config ───────────────────────────────────────────────────────────────
 st.set_page_config(

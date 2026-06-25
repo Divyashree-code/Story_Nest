@@ -177,16 +177,54 @@ def main():
     )
     parser.add_argument(
         "--audio",
-        required=True,
-        help="Path to WAV file to score",
+        help="Path to WAV file to score (one-shot mode)",
+    )
+    parser.add_argument(
+        "--server",
+        action="store_true",
+        help="Run as Flask server — pre-loads model and listens on port 8080",
     )
     args = parser.parse_args()
 
-    result = score_pronunciation(args.audio.strip())
+    if args.server:
+        _run_server()
+    elif args.audio:
+        result = score_pronunciation(args.audio.strip())
+        print(json.dumps(result))
+        sys.stdout.flush()
+    else:
+        print(json.dumps({"success": False, "error": "Provide --audio or --server"}))
+        sys.exit(1)
 
-    # Print single JSON line to stdout — caller reads and parses this
-    print(json.dumps(result))
-    sys.stdout.flush()
+
+def _run_server():
+    """
+    Flask server mode — pre-loads wav2vec2 into RAM once, then serves
+    POST /score requests with a filename. Audio read from /data mount.
+    GET /health for readiness check.
+    """
+    from flask import Flask, request, jsonify
+
+    # Pre-load model into RAM before accepting requests
+    print("Loading wav2vec2 model into RAM...", flush=True)
+    _load_model()
+    print("Model loaded — server ready", flush=True)
+
+    app = Flask(__name__)
+
+    @app.route("/health", methods=["GET"])
+    def health():
+        return jsonify({"status": "ok"})
+
+    @app.route("/score", methods=["POST"])
+    def score():
+        data = request.get_json()
+        if not data or "file" not in data:
+            return jsonify({"success": False, "error": "Missing 'file' in request body"}), 400
+        result = score_pronunciation(data["file"])
+        return jsonify(result)
+
+    app.run(host="0.0.0.0", port=8080, debug=False)
 
 
 if __name__ == "__main__":

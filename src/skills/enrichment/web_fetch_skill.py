@@ -16,27 +16,15 @@ using Gemini's own knowledge. Never raises.
 """
 
 import json
-import os
-import tempfile
 from pathlib import Path
-
-import docker
 
 from src.skills.base_skill import BaseSkill
 from src.error_handler import safe_run
-from src.errors import ToolError
 from src.logger import get_logger
 from src.tools.model_armor import sanitize as armor_sanitize
+from src.tools.sandbox_manager import call_web_fetch
 
 log = get_logger("web_fetch_skill")
-
-# Read sandbox image name from SETTINGS.json
-import json as _json
-_settings = _json.loads(
-    (Path(__file__).parent.parent.parent.parent / "SETTINGS.json").read_text()
-)
-SANDBOX_IMAGE   = _settings.get("SANDBOX_IMAGE", "storynest-sandbox")
-SANDBOX_TIMEOUT = _settings.get("SANDBOX_TIMEOUT_S", 10)
 
 
 class WebFetchSkill(BaseSkill):
@@ -105,59 +93,19 @@ class WebFetchSkill(BaseSkill):
 
     def _call_docker(self, topic: str, session_id: str) -> str:
         """
-        Runs web_fetcher.py inside Docker sandbox and returns raw content.
-
-        Returns empty string if Docker fails or returns success=False.
+        Runs web_fetcher.py in pre-warmed container via exec_run.
+        Container pre-warmed at session start by sandbox_manager.prewarm().
+        Returns raw content string or empty string on failure.
         """
-        try:
-            client = docker.from_env()
+        result = call_web_fetch(topic, session_id)
 
-            output = client.containers.run(
-                image=SANDBOX_IMAGE,
-                command=["python", "web_fetcher.py", "--topic", topic],
-                remove=True,               # auto-delete container after run
-                network_mode="bridge",     # web_fetcher needs internet
-                mem_limit="256m",          # memory cap
-                cpu_period=100000,
-                cpu_quota=50000,           # 50% CPU max
-            )
-
-            # Parse JSON from stdout
-            stdout = output.decode("utf-8").strip()
-            result = json.loads(stdout)
-
-            if not result.get("success"):
-                log.warning(
-                    "web_fetch_sandbox_failed",
-                    session_id=session_id,
-                    topic=topic,
-                    error=result.get("error", "unknown"),
-                )
-                return ""
-
-            return result.get("content", "")
-
-        except docker.errors.ContainerError as exc:
+        if not result.get("success"):
             log.warning(
-                "web_fetch_container_error",
+                "web_fetch_sandbox_failed",
                 session_id=session_id,
                 topic=topic,
-                error=str(exc),
+                error=result.get("error", "unknown"),
             )
             return ""
-        except docker.errors.ImageNotFound:
-            log.error(
-                "web_fetch_image_not_found",
-                session_id=session_id,
-                image=SANDBOX_IMAGE,
-                hint="Run: docker build -t storynest-sandbox ./sandbox",
-            )
-            return ""
-        except Exception as exc:
-            log.warning(
-                "web_fetch_docker_error",
-                session_id=session_id,
-                topic=topic,
-                error=str(exc),
-            )
-            return ""
+
+        return result.get("content", "")
