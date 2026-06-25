@@ -1,0 +1,27 @@
+{
+  "DATA_DIR":           "./data",
+  "SPECS_DIR":          "./specs",
+  "LOGS_DIR":           "./logs",
+  "DB_PATH":            "./data/story.db",
+  "LOG_PATH":           "./logs/app.log",
+  "AUDIO_DIR":          "./data",
+  "SANDBOX_IMAGE":      "storynest-sandbox",
+  "SANDBOX_TIMEOUT_S":  30,
+  "WHISPER_MODEL":      "base",
+  "KOKORO_VOICE":       "af_heart",
+  "KOKORO_SAMPLE_RATE": 24000,
+  "STT_SAMPLE_RATE":    16000,
+  "STT_DURATION_S":     7,
+  "STORY_LENGTH_WORDS": {
+    "Short":  150,
+    "Medium": 350,
+    "Long":   700
+  },
+  "SKIP_NARRATION":          false,
+  "MAX_REWRITE_ATTEMPTS":   2,
+  "MAX_HINT_COUNT":          3,
+  "MAX_SESSION_HISTORY":     5,
+  "WIKIPEDIA_TIMEOUT_S":     5,
+  "MODEL_ARMOR_LOCATION":   "us-central1",
+  "GEMINI_MODEL":            "gemini-2.5-flash"
+}

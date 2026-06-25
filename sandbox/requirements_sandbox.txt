@@ -1,0 +1,10 @@
+# sandbox/requirements_sandbox.txt
+# Dependencies for both web_fetcher.py and scorer.py
+# Pinned to exact versions for reproducible Docker builds
+
+requests==2.32.3
+transformers==4.40.0
+torch==2.2.2
+torchaudio==2.2.2
+soundfile==0.12.1
+numpy==1.26.4

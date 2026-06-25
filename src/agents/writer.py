@@ -1,0 +1,250 @@
+"""
+src/agents/writer.py
+
+Writer — second LangGraph node in the pipeline.
+
+Takes the story arc from the Architect and generates the full story.
+Streams tokens to the Streamlit UI in real time via on_story_chunk callback.
+On rewrite attempts, uses specific feedback from the LLM Judge.
+
+Reads from state:
+    story_arc, moral_lesson, protagonist_name,
+    child_name, child_age, story_length, avoid,
+    rewrite_instructions, rewrite_attempts,
+    on_story_chunk, session_id, total_tokens
+
+Writes to state:
+    story_text, rewrite_attempts, total_tokens
+
+Note:
+    spec file (story_final.md) is written by the Validator node
+    on approval — not here. Writer only returns story_text in state.
+"""
+
+import json
+import time
+from pathlib import Path
+
+import google.generativeai as genai
+from dotenv import load_dotenv
+import os
+
+import main as _main_module
+from src.errors import WriterError
+from src.tools.gemini_limiter import gemini_limiter
+from src.error_handler import timed
+from src.logger import get_logger
+
+load_dotenv()
+log = get_logger("writer")
+
+# ── Gemini setup — creative temperature for story generation ──────────────────
+genai.configure(api_key=os.getenv("GOOGLE_API_KEY", ""))
+
+_settings = json.loads(
+    (Path(__file__).parent.parent.parent / "SETTINGS.json").read_text()
+)
+GEMINI_MODEL = _settings.get("GEMINI_MODEL", "gemini-2.5-flash")
+LENGTH_WORDS = _settings.get("STORY_LENGTH_WORDS", {
+    "Short": 150, "Medium": 350, "Long": 700
+})
+
+# Writer uses temperature=0.8 — creativity needed for engaging stories
+gemini_writer = genai.GenerativeModel(
+    GEMINI_MODEL,
+    generation_config=genai.types.GenerationConfig(temperature=0.8),
+)
+
+# ── Vocabulary guidance by age ────────────────────────────────────────────────
+VOCAB_GUIDANCE = {
+    range(3, 5): (
+        "Very short sentences (5-7 words). Simple familiar words only. "
+        "Repetition is encouraged — children love it. "
+        "No words a 3-year-old would not know."
+    ),
+    range(5, 7): (
+        "Short sentences (8-12 words). Common everyday words. "
+        "One slightly new word per paragraph maximum — introduce it naturally. "
+        "Keep descriptions simple and visual."
+    ),
+    range(7, 9): (
+        "Medium sentences (12-16 words). Slightly richer vocabulary. "
+        "Descriptive adjectives welcome. "
+        "Can introduce 2-3 new words if context makes meaning clear."
+    ),
+    range(9, 11): (
+        "Longer sentences with some complexity. "
+        "Descriptive, expressive language. "
+        "Can include minor plot twists and richer character emotions."
+    ),
+}
+
+
+def _get_vocab_guidance(age: int) -> str:
+    """Returns age-appropriate vocabulary guidance string."""
+    for age_range, guidance in VOCAB_GUIDANCE.items():
+        if age in age_range:
+            return guidance
+    return VOCAB_GUIDANCE[range(5, 7)]   # default to 5-7 guidance
+
+
+# ── Story generation ──────────────────────────────────────────────────────────
+
+def _build_system_prompt(state: dict) -> str:
+    """Builds the Writer system prompt from state."""
+    age         = state.get("child_age", 5)
+    word_target = LENGTH_WORDS.get(state.get("story_length", "Medium"), 350)
+    vocab       = _get_vocab_guidance(age)
+    avoid       = ", ".join(state.get("avoid", []) or [])
+    moral       = state.get("moral_lesson", "kindness")
+    protagonist = state.get("protagonist_name", "the little hero")
+
+    rewrite_note = ""
+    if state.get("rewrite_instructions", "").strip():
+        rewrite_note = (
+            f"\n\nPREVIOUS ATTEMPT FAILED. Fix these specific issues:\n"
+            f"{state['rewrite_instructions']}\n"
+            f"Keep the same story arc and protagonist. Only fix what is listed above."
+        )
+
+    avoid_note = f"\nNEVER include: {avoid}." if avoid else ""
+
+    return (
+        f"You are a warm, engaging children's story writer.\n"
+        f"Write for a {age}-year-old child named {state.get('child_name', 'the child')}.\n\n"
+        f"VOCABULARY: {vocab}\n\n"
+        f"LENGTH: Exactly ~{word_target} words. Count carefully.\n\n"
+        f"MORAL: Show '{moral}' through character actions and consequences only. "
+        f"NEVER state it directly as a lesson or moral. "
+        f"The child should feel it, not be told it.\n\n"
+        f"PROTAGONIST: Always refer to them as '{protagonist}'.\n\n"
+        f"TONE: Warm, gentle, imaginative. End on a happy, satisfying note.{avoid_note}"
+        f"{rewrite_note}"
+    )
+
+
+def _generate_story(state: dict) -> tuple[str, int]:
+    """
+    Generates story text from Gemini.
+    Streams tokens to on_story_chunk callback if provided.
+
+    Returns (story_text, tokens_used).
+    Raises WriterError on failure.
+    """
+    session_id   = state["session_id"]
+    on_chunk     = _main_module._story_chunk_callbacks.get(session_id)
+    system       = _build_system_prompt(state)
+    user         = f"Story arc:\n{state.get('story_arc', '')}"
+    prompt       = f"{system}\n\n{user}"
+
+    try:
+        full_text    = ""
+        total_tokens = 0
+
+        for attempt in range(1, 3):
+            gemini_limiter.wait(session_id)
+            try:
+                if on_chunk:
+                    # Streaming mode — send tokens to UI in real time
+                    response = gemini_writer.generate_content(prompt, stream=True)
+                    for chunk in response:
+                        text = getattr(chunk, "text", "") or ""
+                        if text:
+                            full_text += text
+                            on_chunk(text)
+                    try:
+                        total_tokens = response.usage_metadata.total_token_count or 0
+                    except Exception:
+                        total_tokens = len(prompt.split()) + len(full_text.split())
+                else:
+                    response     = gemini_writer.generate_content(prompt)
+                    full_text    = response.text.strip()
+                    total_tokens = getattr(
+                        response.usage_metadata, "total_token_count", 0
+                    ) or 0
+                break  # success — exit retry loop
+
+            except Exception as exc:
+                if attempt == 1 and gemini_limiter.backoff(exc, session_id):
+                    full_text = ""  # reset in case of partial stream
+                    continue
+                raise WriterError(
+                    f"Story generation failed: {exc}",
+                    session_id=session_id,
+                    original_error=str(exc),
+                    attempt=state.get("rewrite_attempts", 0) + 1,
+                ) from exc
+
+        if not full_text.strip():
+            raise WriterError(
+                "Gemini returned empty story text",
+                session_id=session_id,
+                attempt=state.get("rewrite_attempts", 0) + 1,
+            )
+
+        return full_text.strip(), total_tokens
+
+    except WriterError:
+        raise
+    except Exception as exc:
+        raise WriterError(
+            f"Story generation failed: {exc}",
+            session_id=session_id,
+            original_error=str(exc),
+            attempt=state.get("rewrite_attempts", 0) + 1,
+        ) from exc
+
+
+# ── Main node function ────────────────────────────────────────────────────────
+
+@timed("writer", "writer_node")
+def writer_node(state: dict) -> dict:
+    """
+    LangGraph node — Writer.
+
+    Generates story text from the story arc.
+    Streams to UI if on_story_chunk callback is set in state.
+    On rewrite attempts, uses rewrite_instructions from Validator.
+
+    Args:
+        state: LangGraph StoryState dict
+
+    Returns:
+        Updated state with story_text, rewrite_attempts, total_tokens
+    """
+    session_id      = state["session_id"]
+    attempt_number  = state.get("rewrite_attempts", 0) + 1
+    is_rewrite      = bool(state.get("rewrite_instructions", "").strip())
+
+    log.info(
+        "writer_started",
+        session_id=session_id,
+        attempt=attempt_number,
+        is_rewrite=is_rewrite,
+        story_length=state.get("story_length", "Medium"),
+        child_age=state.get("child_age"),
+    )
+
+    story_text, tokens = _generate_story(state)
+
+    word_count    = len(story_text.split())
+    total_tokens  = state.get("total_tokens", 0) + tokens
+
+    log.info(
+        "writer_complete",
+        session_id=session_id,
+        attempt=attempt_number,
+        word_count=word_count,
+        tokens_this_call=tokens,
+        total_tokens=total_tokens,
+        is_rewrite=is_rewrite,
+    )
+
+    return {
+        **state,
+        "story_text":      story_text,
+        "rewrite_attempts": attempt_number,
+        "total_tokens":    total_tokens,
+        # Clear rewrite instructions — Validator sets them again if needed
+        "rewrite_instructions": "",
+    }

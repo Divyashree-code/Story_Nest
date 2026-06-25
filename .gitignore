@@ -1,0 +1,41 @@
+# Environment
+.env
+service_account.json
+
+# Virtual environment
+venv/
+venv312/
+.venv/
+
+# Database
+data/story.db
+data/*.wav
+data/*.mp3
+
+# Logs
+logs/
+
+# Specs (session audit trail — too large for git)
+specs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Test artifacts
+test_audio.mp3
+test_kokoro.wav
+test_tts.py
+test_kokoro.py
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp

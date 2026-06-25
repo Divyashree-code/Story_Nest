@@ -1,0 +1,67 @@
+.
+├── app.py
+├── main.py
+├── requirements.txt
+├── SETTINGS.json
+├── .env
+├── .env.example
+├── .gitignore
+├── README.md
+├── entry_points.md
+├── directory_structure.txt
+│
+├── src/
+│   ├── agents/
+│   │   ├── architect.py
+│   │   ├── writer.py
+│   │   ├── validator.py
+│   │   ├── narrator.py
+│   │   ├── discussion_prompt.py
+│   │   ├── puzzle.py
+│   │   └── answer.py
+│   │
+│   ├── skills/
+│   │   ├── base_skill.py
+│   │   └── enrichment/
+│   │       ├── web_fetch_skill.py
+│   │       └── skip_fetch_skill.py
+│   │
+│   ├── tools/
+│   │   ├── tts.py
+│   │   ├── stt.py
+│   │   ├── model_armor.py
+│   │   └── spec_writer.py
+│   │
+│   ├── memory/
+│   │   └── sqlite.py
+│   │
+│   ├── evaluation/
+│   │   └── trajectory.py
+│   │
+│   ├── errors.py
+│   ├── error_handler.py
+│   └── logger.py
+│
+├── sandbox/
+│   ├── Dockerfile
+│   ├── scorer.py
+│   └── web_fetcher.py
+│
+├── specs/
+│   └── {session_id}/
+│       ├── arc.md
+│       ├── story_final.md
+│       ├── puzzle.md
+│       └── trajectory.md
+│
+├── data/
+│   └── story.db
+│
+├── logs/
+│   └── app.log
+│
+└── tests/
+    ├── test_skills.py
+    ├── test_validator.py
+    ├── test_error_handler.py
+    └── test_sqlite.py

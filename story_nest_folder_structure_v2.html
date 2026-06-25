@@ -1,0 +1,106 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  body {
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    background: transparent;
+    color: var(--color-text-primary, #1a1a1a);
+    padding: 16px;
+    margin: 0;
+    line-height: 1.85;
+  }
+  .root  { font-weight: 700; font-size: 14px; }
+  .fold  { color: var(--color-blue-600, #2563eb); font-weight: 600; }
+  .file  { color: var(--color-text-secondary, #555); }
+  .spec  { color: var(--color-purple-600, #7c3aed); }
+  .tree  { color: var(--color-border-secondary, #aaa); }
+  .divider {
+    border: none;
+    border-top: 1px dashed var(--color-border-tertiary, #e5e7eb);
+    margin: 6px 0;
+  }
+  .row { display: flex; align-items: baseline; white-space: nowrap; }
+</style>
+</head>
+<body>
+
+<div class="row"><span class="root">kids-story-agent/</span></div>
+
+<div class="row"><span class="tree">├── </span><span class="file">app.py</span></div>
+<div class="row"><span class="tree">├── </span><span class="file">main.py</span></div>
+<div class="row"><span class="tree">├── </span><span class="file">requirements.txt</span></div>
+<div class="row"><span class="tree">├── </span><span class="file">.env</span></div>
+<div class="row"><span class="tree">└── </span><span class="file">.gitignore</span></div>
+
+<hr class="divider"/>
+
+<div class="row"><span class="tree">├── </span><span class="fold">src/</span></div>
+
+<div class="row"><span class="tree">│   ├── </span><span class="fold">agents/</span></div>
+<div class="row"><span class="tree">│   │   ├── </span><span class="file">architect.py</span></div>
+<div class="row"><span class="tree">│   │   ├── </span><span class="file">writer.py</span></div>
+<div class="row"><span class="tree">│   │   ├── </span><span class="file">validator.py</span></div>
+<div class="row"><span class="tree">│   │   ├── </span><span class="file">narrator.py</span></div>
+<div class="row"><span class="tree">│   │   ├── </span><span class="file">discussion_prompt.py</span></div>
+<div class="row"><span class="tree">│   │   ├── </span><span class="file">puzzle.py</span></div>
+<div class="row"><span class="tree">│   │   └── </span><span class="file">answer.py</span></div>
+
+<div class="row"><span class="tree">│   ├── </span><span class="fold">skills/</span></div>
+<div class="row"><span class="tree">│   │   ├── </span><span class="file">base_skill.py</span></div>
+<div class="row"><span class="tree">│   │   └── </span><span class="fold">enrichment/</span></div>
+<div class="row"><span class="tree">│   │       ├── </span><span class="file">web_fetch_skill.py</span></div>
+<div class="row"><span class="tree">│   │       └── </span><span class="file">skip_fetch_skill.py</span></div>
+
+<div class="row"><span class="tree">│   ├── </span><span class="fold">tools/</span></div>
+<div class="row"><span class="tree">│   │   ├── </span><span class="file">tts.py</span></div>
+<div class="row"><span class="tree">│   │   ├── </span><span class="file">stt.py</span></div>
+<div class="row"><span class="tree">│   │   ├── </span><span class="file">model_armor.py</span></div>
+<div class="row"><span class="tree">│   │   └── </span><span class="file">spec_writer.py</span></div>
+
+<div class="row"><span class="tree">│   ├── </span><span class="fold">memory/</span></div>
+<div class="row"><span class="tree">│   │   └── </span><span class="file">sqlite.py</span></div>
+
+<div class="row"><span class="tree">│   ├── </span><span class="fold">evaluation/</span></div>
+<div class="row"><span class="tree">│   │   └── </span><span class="file">trajectory.py</span></div>
+
+<div class="row"><span class="tree">│   ├── </span><span class="file">errors.py</span></div>
+<div class="row"><span class="tree">│   ├── </span><span class="file">error_handler.py</span></div>
+<div class="row"><span class="tree">│   └── </span><span class="file">logger.py</span></div>
+
+<hr class="divider"/>
+
+<div class="row"><span class="tree">├── </span><span class="fold">sandbox/</span></div>
+<div class="row"><span class="tree">│   ├── </span><span class="file">Dockerfile</span></div>
+<div class="row"><span class="tree">│   ├── </span><span class="file">scorer.py</span></div>
+<div class="row"><span class="tree">│   └── </span><span class="file">web_fetcher.py</span></div>
+
+<hr class="divider"/>
+
+<div class="row"><span class="tree">├── </span><span class="fold">specs/</span></div>
+<div class="row"><span class="tree">│   └── </span><span class="fold">{session_id}/</span></div>
+<div class="row"><span class="tree">│       ├── </span><span class="spec">arc.md</span></div>
+<div class="row"><span class="tree">│       ├── </span><span class="spec">story_final.md</span></div>
+<div class="row"><span class="tree">│       ├── </span><span class="spec">puzzle.md</span></div>
+<div class="row"><span class="tree">│       └── </span><span class="spec">trajectory.md</span></div>
+
+<hr class="divider"/>
+
+<div class="row"><span class="tree">├── </span><span class="fold">data/</span></div>
+<div class="row"><span class="tree">│   └── </span><span class="file">story.db</span></div>
+
+<div class="row"><span class="tree">├── </span><span class="fold">logs/</span></div>
+<div class="row"><span class="tree">│   └── </span><span class="file">app.log</span></div>
+
+<hr class="divider"/>
+
+<div class="row"><span class="tree">└── </span><span class="fold">tests/</span></div>
+<div class="row"><span class="tree">    ├── </span><span class="file">test_skills.py</span></div>
+<div class="row"><span class="tree">    ├── </span><span class="file">test_validator.py</span></div>
+<div class="row"><span class="tree">    ├── </span><span class="file">test_error_handler.py</span></div>
+<div class="row"><span class="tree">    └── </span><span class="file">test_sqlite.py</span></div>
+
+</body>
+</html>
