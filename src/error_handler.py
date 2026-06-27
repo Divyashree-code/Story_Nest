@@ -145,7 +145,7 @@ def with_fallback(
     (we do not silently swallow fallback failures).
 
     Designed for:
-        - Kokoro TTS → pyttsx3
+        - Edge TTS → narration_failed=True (session continues)
         - Whisper → re-ask child
 
     Args:

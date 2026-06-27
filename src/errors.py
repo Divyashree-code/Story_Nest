@@ -78,8 +78,8 @@ class ToolError(StoryAgentError):
 
 class TTSError(ToolError):
     """
-    Kokoro-82M TTS failed.
-    error_handler falls back to pyttsx3 on this exception.
+    Microsoft Edge TTS (edge-tts) failed.
+    Caller sets narration_failed=True and session continues without audio.
     """
 
 

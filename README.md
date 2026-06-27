@@ -12,7 +12,7 @@ Parents want to give their children quality story time but often draw from the s
 
 ## Architecture Overview
 
-Six LangGraph agents orchestrated in a state machine with two conditional loops:
+Seven LangGraph agents orchestrated in a state machine with two conditional loops:
 
 ```
 Story Architect → Writer → LLM Judge (rewrite loop) → Narrator
@@ -23,8 +23,8 @@ Story Architect → Writer → LLM Judge (rewrite loop) → Narrator
 
 **Key technical decisions:**
 - LangGraph for stateful agent orchestration with conditional loops
-- Gemini 2.0 Flash for all LLM calls (free tier)
-- Kokoro-82M for local TTS narration
+- Gemini 2.5 Flash for all LLM calls (free tier)
+- Microsoft Edge TTS (edge-tts) for neural TTS narration — no API key needed
 - Whisper base for local STT transcription
 - wav2vec2-base in Docker for pronunciation scoring
 - web_fetcher in Docker for isolated Wikipedia calls
@@ -55,9 +55,9 @@ Tested on: Windows 11, Python 3.12, 16GB RAM
 
 | Software | Version | Purpose |
 |---|---|---|
-| Python | 3.12.x | Runtime (3.13+ not supported — Kokoro incompatible) |
-| Docker Desktop | Latest | Sandbox for web fetcher and pronunciation scorer |
-| FFmpeg | Latest | Required by Whisper for audio processing |
+| Python | 3.12.x | Runtime |
+| Docker Desktop | Latest | Sandbox for web fetcher and pronunciation scorer — must be running before app start |
+| FFmpeg | Latest | Required by openai-whisper for audio decoding — must be on system PATH |
 | Git | Latest | Version control |
 
 ---
@@ -90,7 +90,7 @@ cd storynest
 
 ```bash
 py -3.12 -m venv venv312
-source venv312/Scripts/activate
+venv312\Scripts\activate
 ```
 
 ### Step 4 — Install Python dependencies
@@ -121,13 +121,19 @@ Open `.env` and fill in:
 docker build -t storynest-sandbox ./sandbox
 ```
 
+This builds a single image used for two containers:
+- **scorer** — runs wav2vec2-base as a Flask server for pronunciation scoring
+- **web_fetcher** — isolated Wikipedia fetching with Model Armor sanitisation
+
+Both containers start automatically when the app launches and are kept warm throughout the session. Docker Desktop must be running before you start the app.
+
 ---
 
 ## Running the Application
 
 ```bash
 # Activate venv if not already active
-source venv312/Scripts/activate
+venv312\Scripts\activate
 
 # Start the app
 streamlit run app.py
@@ -168,7 +174,7 @@ Captures: exact prompts, responses, token counts, latency per node
 Captures: fallbacks, retries, Model Armor decisions, trajectory scores
 
 **specs/{session_id}/** — human-readable markdown audit trail
-Written per session: arc.md, story_final.md, puzzle.md, trajectory.md
+Written per session: arc.md, story_final.md, puzzle.md, trajectory.md (4 files per session)
 
 ---
 
@@ -176,10 +182,10 @@ Written per session: arc.md, story_final.md, puzzle.md, trajectory.md
 
 | Service | Cost |
 |---|---|
-| Gemini 2.0 Flash | Free — 1500 requests/day |
+| Gemini 2.5 Flash | Free — check current limits at aistudio.google.com |
 | Model Armor | Free tier |
 | LangSmith | Free — 5000 traces/month |
-| Kokoro-82M | Free — runs locally |
+| Edge TTS (edge-tts) | Free — Microsoft cloud neural TTS |
 | Whisper base | Free — runs locally |
 | wav2vec2-base | Free — runs locally in Docker |
 
@@ -213,7 +219,7 @@ pytest tests/ -v
 - **Multilingual support** — Gemini natively supports Arabic and other languages. The architecture supports this without changes — only the TTS voice and profile language field need updating
 - **Multiple child profiles** — UUID-scoped session directories already support concurrent sessions. SQLite schema extension needed for multiple profiles
 - **Google ADK** — for production deployment on Vertex AI, Google ADK would replace LangGraph providing native Gemini integration and built-in evaluation
-- **Kokoro on Linux** — Kokoro-82M installs cleanly on Linux/macOS. Recommended for production deployment
+- **Offline TTS** — Edge TTS requires internet (Microsoft cloud). For fully offline deployment, replace edge-tts with a local model such as Coqui TTS or Piper
 - **OpenTelemetry** — for distributed tracing when scaling to a multi-service deployment on Google Cloud
 
 ---
@@ -223,7 +229,7 @@ pytest tests/ -v
 - LangGraph: `langchain-ai.github.io/langgraph`
 - Whisper: Radford et al., 2022 — `arxiv.org/abs/2212.04356`
 - wav2vec2: Baevski et al., 2020 — `arxiv.org/abs/2006.11477`
-- Kokoro-82M: `huggingface.co/hexgrad/Kokoro-82M`
+- Edge TTS: `github.com/rany2/edge-tts`
 - Google Model Armor: `cloud.google.com/security/products/model-armor`
 - LangSmith: `docs.smith.langchain.com`
-- Gemini 2.0 Flash: `ai.google.dev/gemini-api/docs`
+- Gemini 2.5 Flash: `ai.google.dev/gemini-api/docs`

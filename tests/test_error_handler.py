@@ -106,7 +106,7 @@ class TestWithFallback:
 
     def test_primary_fails_fallback_called(self):
         """Primary raises StoryAgentError — fallback called."""
-        primary  = mock.MagicMock(side_effect=TTSError("kokoro failed"))
+        primary  = mock.MagicMock(side_effect=TTSError("edge tts failed"))
         fallback = mock.MagicMock(return_value="fallback_result")
         result = with_fallback(primary, fallback, session_id="test")
         assert result == "fallback_result"

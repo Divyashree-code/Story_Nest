@@ -3,7 +3,7 @@ src/agents/narrator.py
 
 Narrator — fourth LangGraph node in the pipeline.
 
-Plays the approved story text aloud using Kokoro TTS.
+Plays the approved story text aloud using Microsoft Edge TTS (edge-tts).
 No Gemini call — pure audio output.
 
 After story plays, speaks a personalised discussion prompt
@@ -66,7 +66,7 @@ def narrator_node(state: dict) -> dict:
     """
     LangGraph node — Narrator.
 
-    Plays story text via Kokoro TTS.
+    Plays story text via Microsoft Edge TTS.
     Speaks discussion prompt after story completes.
     Sets narration_failed flag if TTS fails after retry.
 
