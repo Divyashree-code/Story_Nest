@@ -216,7 +216,7 @@ pytest tests/ -v
 
 ## Future Extensions
 
-- **Multilingual support** — Gemini natively supports Arabic and other languages. The architecture supports this without changes — only the TTS voice and profile language field need updating
+- **Multilingual support** — Currently English-only. Future versions could support other languages such as Arabic, Spanish, and French, allowing families to enjoy stories in their native language
 - **Multiple child profiles** — UUID-scoped session directories already support concurrent sessions. SQLite schema extension needed for multiple profiles
 - **Google ADK** — for production deployment on Vertex AI, Google ADK would replace LangGraph providing native Gemini integration and built-in evaluation
 - **Offline TTS** — Edge TTS requires internet (Microsoft cloud). For fully offline deployment, replace edge-tts with a local model such as Coqui TTS or Piper
