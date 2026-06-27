@@ -182,7 +182,7 @@ Written per session: arc.md, story_final.md, puzzle.md, trajectory.md (4 files p
 
 | Service | Cost |
 |---|---|
-| Gemini 2.5 Flash | Free — check current limits at aistudio.google.com |
+| Gemini 2.5 Flash | check current limits at aistudio.google.com |
 | Model Armor | Free tier |
 | LangSmith | Free — 5000 traces/month |
 | Edge TTS (edge-tts) | Free — Microsoft cloud neural TTS |
