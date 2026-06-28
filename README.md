@@ -189,7 +189,6 @@ Written per session: arc.md, story_final.md, puzzle.md, trajectory.md (4 files p
 | Whisper base | Free — runs locally |
 | wav2vec2-base | Free — runs locally in Docker |
 
-**Total cost: $0**
 
 ---
 
